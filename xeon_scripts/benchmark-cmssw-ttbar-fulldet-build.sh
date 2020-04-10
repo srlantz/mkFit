@@ -9,6 +9,10 @@ suite=${2:-"forPR"} # which set of benchmarks to run: full, forPR, forConf
 useARCH=${3:-0}
 lnxuser=${4:-${USER}}
 
+run_nths="false"
+use_vOpts="true"
+disable_fma="false"
+
 ###################
 ## Configuration ##
 ###################
@@ -21,47 +25,57 @@ source xeon_scripts/init-env.sh
 if [[ "${ben_arch}" == "SNB" ]]
 then
     mOpt="-j 12"
+    vOpt=""
     dir=/data2
     maxth=24
     maxvu=8
     declare -a nths=("1" "2" "4" "6" "8" "12" "16" "20" "24")
     declare -a nvus=("1" "2" "4" "8")
+    vOpts=([1]="NO_VEC:=1" [2]="SSE:=1" [4]="SSE:=1" [8]="")
     declare -a nevs=("1" "2" "4" "8" "12")
 elif [[ "${ben_arch}" == "KNL" ]]
 then
-    mOpt="-j 64 AVX_512:=1"
+    mOpt="-j 64"
+    vOpt="AVX_512:=1"
     dir=/data2
     maxth=256
     maxvu=16
     declare -a nths=("1" "2" "4" "8" "16" "32" "64" "96" "128" "160" "192" "224" "256")
     declare -a nvus=("1" "2" "4" "8" "16")
+    vOpts=([1]="NO_VEC:=1" [2]="SSE:=1" [4]="SSE:=1" [8]="AVX2:=1" [16]="AVX_512:=1")
     declare -a nevs=("1" "2" "4" "8" "16" "32" "64" "128")
 elif [[ "${ben_arch}" == "SKL-SP" ]]
 then
-    mOpt="-j 32 AVX_512:=1"
+    mOpt="-j 32"
+    vOpt="AVX_512:=1"
     dir=/data2
     maxth=64
     maxvu=16
     declare -a nths=("1" "2" "4" "8" "16" "32" "48" "64")
     declare -a nvus=("1" "2" "4" "8" "16")
+    vOpts=([1]="NO_VEC:=1" [2]="SSE:=1" [4]="SSE:=1" [8]="AVX2:=1" [16]="AVX_512:=1")
     declare -a nevs=("1" "2" "4" "8" "16" "32" "64")
 elif [[ "${ben_arch}" == "LNX-G" ]]
 then 
-    mOpt="-j 32 AVX_512:=1"
+    mOpt="-j 32"
+    vOpt="AVX_512:=1"
     dir=/data2
     maxth=64
     maxvu=16
     declare -a nths=("1" "2" "4" "8" "16" "32" "48" "64")
     declare -a nvus=("1" "2" "4" "8" "16")
+    vOpts=([1]="NO_VEC:=1" [2]="SSE:=1" [4]="SSE:=1" [8]="AVX2:=1" [16]="AVX_512:=1")
     declare -a nevs=("1" "2" "4" "8" "16" "32" "64")
 elif [[ "${ben_arch}" == "LNX-S" ]]
 then 
-    mOpt="-j 32 AVX_512:=1"
+    mOpt="-j 32"
+    vOpt="AVX_512:=1"
     dir=/data2
     maxth=64
     maxvu=16
     declare -a nths=("1" "2" "4" "8" "16" "32" "48" "64")
     declare -a nvus=("1" "2" "4" "8" "16")
+    vOpts=([1]="NO_VEC:=1" [2]="SSE:=1" [4]="SSE:=1" [8]="AVX2:=1" [16]="AVX_512:=1")
     declare -a nevs=("1" "2" "4" "8" "16" "32" "64")
 else 
     echo ${ben_arch} "is not a valid architecture! Exiting..."
@@ -89,9 +103,11 @@ base=${ben_arch}_${sample}
 
 ## compile with appropriate options
 make distclean ${mOpt}
-make ${mOpt}
+make ${mOpt} ${vOpt}
 
 ## Parallelization Benchmarks
+if [[ run_nths == "true" ]]
+then
 for nth in "${nths[@]}"
 do
     for build in "${th_builds[@]}"
@@ -130,12 +146,21 @@ do
 	done
     done
 done
+fi
 
 ## Vectorization Benchmarks
 for nvu in "${nvus[@]}"
 do
     make clean ${mOpt}
-    make ${mOpt} USE_INTRINSICS:=-DMPT_SIZE=${nvu}
+    if [[ ${use_vOpts} = "true" ]]
+    then
+        vOpt=${vOpts[${nvu}]}
+    fi
+    if [[ ${disable_fma} = "true" ]]
+    then
+        vOpt="${vOpt} NO_FMA:=1"
+    fi    
+    make ${mOpt} ${vOpt} USE_INTRINSICS:=-DMPT_SIZE=${nvu}
 
     for build in "${vu_builds[@]}"
     do echo ${!build} | while read -r bN bO
